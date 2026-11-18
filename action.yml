@@ -18,6 +18,9 @@ inputs:
   model:
     description: Optional Claude model for the run, such as opus. Empty uses Claude Code's default.
     default: ""
+  doodles:
+    description: Playful, short-lived duck updates in Linear while Quackbot works. Set to "off" to disable.
+    default: "on"
 
 runs:
   using: composite
@@ -60,6 +63,7 @@ runs:
         mode: ${{ github.event.client_payload.mode }}
         timeout-minutes: ${{ inputs.timeout-minutes }}
         model: ${{ inputs.model }}
+        doodles: ${{ inputs.doodles }}
         relay-url: ${{ inputs.relay-url }}
         oidc-audience: quackbot-relay
         claude-token: ${{ inputs.claude-token }}
