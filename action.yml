@@ -1,0 +1,85 @@
+name: Quackbot
+description: Runs Quackbot, a Linear coding agent, for a Linear session dispatched to this repository.
+author: Rubber Duck Ops
+branding:
+  icon: message-circle
+  color: yellow
+
+inputs:
+  claude-token:
+    description: This repository's own CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`). Pass it from a secret.
+    required: true
+  relay-url:
+    description: The Quackbot relay address. Pass it from a secret (QUACKBOT_RELAY_URL) so it stays masked in logs.
+    required: true
+  timeout-minutes:
+    description: Minutes before the agent is stopped. Keep the job's timeout-minutes at least 10 higher.
+    default: "60"
+
+runs:
+  using: composite
+  steps:
+    - name: Check out this repository
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    # The relay checks this run's GitHub OIDC token and the Linear project link, then returns a
+    # one-hour, read-only token for the Quackbot toolkit. Repositories that are not linked get nothing.
+    - name: Get access to the Quackbot toolkit
+      id: toolkit
+      shell: bash
+      env:
+        RELAY_URL: ${{ inputs.relay-url }}
+      run: |
+        set -euo pipefail
+        echo "::add-mask::$RELAY_URL"
+        oidc=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=quackbot-relay" | jq -er .value)
+        echo "::add-mask::$oidc"
+        token=$(curl -sSf -X POST -H "Authorization: Bearer $oidc" "${RELAY_URL%/}/runner/checkout-token" | jq -er .token)
+        echo "::add-mask::$token"
+        echo "token=$token" >> "$GITHUB_OUTPUT"
+
+    - name: Check out the Quackbot toolkit
+      uses: actions/checkout@v4
+      with:
+        repository: rubber-duck-ops/coding-agent
+        ref: main
+        token: ${{ steps.toolkit.outputs.token }}
+        path: .quackbot
+        persist-credentials: false
+
+    - name: Run Quackbot
+      uses: ./.quackbot/.github/actions/quackbot
+      with:
+        issueId: ${{ github.event.client_payload.issueId }}
+        sessionId: ${{ github.event.client_payload.sessionId }}
+        mode: ${{ github.event.client_payload.mode }}
+        timeout-minutes: ${{ inputs.timeout-minutes }}
+        relay-url: ${{ inputs.relay-url }}
+        oidc-audience: quackbot-relay
+        claude-token: ${{ inputs.claude-token }}
+
+    # Needs nothing from the toolkit, so it still reports when the toolkit could not be fetched.
+    # Skips when the runner already posted a specific error.
+    - name: Report a failure to Linear
+      if: failure()
+      shell: bash
+      env:
+        RELAY_URL: ${{ inputs.relay-url }}
+        LINEAR_SESSION_ID: ${{ github.event.client_payload.sessionId }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        if [ -n "${RUNNER_TEMP:-}" ] && [ -f "$RUNNER_TEMP/quackbot-reported" ]; then
+          echo "The runner already reported the failure to Linear."
+          exit 0
+        fi
+        (
+          set -eo pipefail
+          echo "::add-mask::$RELAY_URL"
+          oidc=$(curl -sf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=quackbot-relay" | jq -er .value)
+          echo "::add-mask::$oidc"
+          payload=$(jq -n --arg s "$LINEAR_SESSION_ID" --arg b "The Quackbot run failed. See $RUN_URL" \
+            '{sessionId: $s, op: "postActivity", args: {content: {type: "error", body: $b}}}')
+          curl -sf -X POST -H "Authorization: Bearer $oidc" -H "Content-Type: application/json" -d "$payload" "${RELAY_URL%/}/runner/linear" > /dev/null
+        ) || echo "could not report to Linear"
