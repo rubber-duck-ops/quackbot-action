@@ -15,6 +15,9 @@ inputs:
   timeout-minutes:
     description: Minutes before the agent is stopped. Keep the job's timeout-minutes at least 10 higher.
     default: "60"
+  model:
+    description: Optional Claude model for the run, such as opus. Empty uses Claude Code's default.
+    default: ""
 
 runs:
   using: composite
@@ -56,6 +59,7 @@ runs:
         sessionId: ${{ github.event.client_payload.sessionId }}
         mode: ${{ github.event.client_payload.mode }}
         timeout-minutes: ${{ inputs.timeout-minutes }}
+        model: ${{ inputs.model }}
         relay-url: ${{ inputs.relay-url }}
         oidc-audience: quackbot-relay
         claude-token: ${{ inputs.claude-token }}
