@@ -13,10 +13,10 @@ inputs:
     description: The Quackbot relay address. Pass it from a secret (QUACKBOT_RELAY_URL) so it stays masked in logs.
     required: true
   timeout-minutes:
-    description: Minutes before the agent is stopped. Keep the job's timeout-minutes at least 10 higher.
+    description: Minutes before one agent call is stopped. A run makes several calls, so keep the job's timeout-minutes well above this (180 is a good start).
     default: "60"
   model:
-    description: Optional Claude model for the run, such as opus. Empty uses Claude Code's default.
+    description: Optional Claude model for the Builder stage, such as sonnet. Empty uses Opus. The other stages keep their own models.
     default: ""
   doodles:
     description: Playful, short-lived duck updates in Linear while Quackbot works. Set to "off" to disable.
